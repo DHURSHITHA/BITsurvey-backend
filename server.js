@@ -1,17 +1,305 @@
+// const express = require("express");
+// const mysql = require("mysql2");
+// const cors = require("cors");
+// const bcrypt = require("bcrypt"); // For password hashing
+// const jwt = require("jsonwebtoken"); // For generating tokens
+// const config = require('./src/config/config.js').development;
+
+// const app = express();
+// app.use(express.json()); // To parse JSON requests
+// app.use(cors()); // Allow cross-origin requests
+
+// // MySQL Connection
+// const db = mysql.createConnection({
+//   host: config.host,
+//   user: config.user,
+//   password: config.password,
+//   database: config.database,
+// });
+
+// db.connect((err) => {
+//   if (err) {
+//     console.error("Database connection failed: " + err.stack);
+//     return;
+//   }
+//   console.log("Connected to MySQL database.");
+// });
+
+// // Helper function to generate JWT token
+// const generateToken = (user) => {
+//   return jwt.sign({ id: user.id, email: user.email, role: user.role_ }, "your_secret_key", { expiresIn: "1h" });
+// };
+
+// // Middleware to verify JWT token
+// const verifyToken = (req, res, next) => {
+//   const token = req.headers["authorization"];
+//   if (!token) {
+//     return res.status(403).json({ success: false, message: "No token provided." });
+//   }
+
+//   jwt.verify(token, "your_secret_key", (err, decoded) => {
+//     if (err) {
+//       return res.status(401).json({ success: false, message: "Failed to authenticate token." });
+//     }
+//     req.user = decoded;
+//     next();
+//   });
+// };
+
+// // Login route
+// app.post("/login", (req, res) => {
+//   const { email, password_ } = req.body;
+
+//   if (!email || !password_) {
+//     return res.status(400).json({ success: false, message: "❌ Please provide email and password." });
+//   }
+
+//   // Check if the user exists
+//   db.query("SELECT * FROM users WHERE email = ?", [email], async (err, results) => {
+//     if (err) {
+//       console.error("❌ Database error:", err);
+//       return res.status(500).json({ success: false, message: "⚠️ Server error. Please try again later." });
+//     }
+
+//     if (results.length === 0) {
+//       return res.status(401).json({ success: false, message: "⚠️ Invalid credentials." });
+//     }
+
+//     const user = results[0];
+
+//     // Compare the provided password with the hashed password in the database
+//     const isPasswordValid = await bcrypt.compare(password_, user.password_);
+//     if (!isPasswordValid) {
+//       return res.status(401).json({ success: false, message: "⚠️ Invalid credentials." });
+//     }
+
+//     // Check if the faculty has created a survey
+//     db.query("SELECT * FROM questions WHERE staff_email = ?", [email], (err, surveyResults) => {
+//       if (err) {
+//         console.error("❌ Database error:", err);
+//         return res.status(500).json({ success: false, message: "⚠️ Server error. Please try again later." });
+//       }
+
+//       const hasCreatedSurvey = surveyResults.length > 0;
+
+//       // Generate a token
+//       const token = generateToken(user);
+
+//       // Send success response with token and survey creation status
+//       res.status(200).json({
+//         success: true,
+//         message: "✅ Login successful!",
+//         token,
+//         hasCreatedSurvey, // Indicates whether the faculty has created a survey
+//       });
+//     });
+//   });
+// });
+
+// // Register route
+// app.post("/register", (req, res) => {
+//   const { email, userID, role_, password_ } = req.body;
+
+//   if (!email || !userID || !role_ || !password_) {
+//     return res.status(400).json({ success: false, message: "❌ Please fill all fields." });
+//   }
+
+//   // Check if the email is already registered
+//   db.query("SELECT * FROM users WHERE email = ?", [email], async (err, results) => {
+//     if (err) {
+//       console.error("❌ Database error:", err);
+//       return res.status(500).json({ success: false, message: "⚠️ Server error. Please try again later." });
+//     }
+
+//     if (results.length > 0) {
+//       return res.status(400).json({ success: false, message: "⚠️ Email already registered." });
+//     }
+
+//     // Hash the password
+//     const hashedPassword = await bcrypt.hash(password_, 10);
+
+//     // Insert the new user into the database
+//     db.query(
+//       "INSERT INTO users (email, userID, role_, password_) VALUES (?, ?, ?, ?)",
+//       [email, userID, role_, hashedPassword],
+//       (err, results) => {
+//         if (err) {
+//           console.error("❌ Database error:", err);
+//           return res.status(500).json({ success: false, message: "⚠️ Server error. Please try again later." });
+//         }
+
+//         res.status(201).json({ success: true, message: "✅ Registration successful!" });
+//       }
+//     );
+//   });
+// });
+
+// // Save survey route
+// app.post("/save-survey", verifyToken, async (req, res) => {
+//   console.log("Request Body:", req.body); // Log the request payload
+//   const surveyData = req.body;
+//   const staff_email = req.user.email;
+//   const survey_id = req.body.survey_id;
+
+//   if (!surveyData || !Array.isArray(surveyData.questions)) {
+//     console.error("Invalid data format:", surveyData); // Log invalid data
+//     return res.status(400).json({ error: "Invalid data format" });
+//   }
+
+//   try {
+//     const queryPromises = surveyData.questions.map((q) => {
+//       return new Promise((resolve, reject) => {
+//         // Insert question
+//         db.query(
+//           "INSERT INTO questions (question_text, shuffle_answers, shuffle_questions, skip_based_on_answer, multiple_choice, scale, score_question, add_other_option, require_answer, texts, survey_id, staff_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+//           [
+//             q.text,
+//             q.shuffle_answers || false,
+//             q.shuffle_questions || false,
+//             q.skip_based_on_answer || false,
+//             q.type === "multiple" ? true : false,
+//             q.type === "scale" ? true : false,
+//             q.score_question || false,
+//             q.add_other_option || false,
+//             q.require_answer || false,
+//             q.type === "text" ? true : false,
+//             survey_id,
+//             staff_email,
+//           ],
+//           (err, result) => {
+//             if (err) {
+//               console.error("Error inserting question:", err); // Log the error
+//               return reject(err);
+//             }
+//             const questionId = result.insertId;
+
+//             // Insert options
+//             if (q.options && Array.isArray(q.options)) {
+//               const optionQueries = q.options.map((opt) => {
+//                 return new Promise((resOpt, rejOpt) => {
+//                   db.query(
+//                     "INSERT INTO options (question_id, option_text) VALUES (?, ?)",
+//                     [questionId, opt],
+//                     (err) => {
+//                       if (err) {
+//                         console.error("Error inserting option:", err); // Log the error
+//                         return rejOpt(err);
+//                       }
+//                       resOpt();
+//                     }
+//                   );
+//                 });
+//               });
+
+//               // Wait for all options to be inserted
+//               Promise.all(optionQueries)
+//                 .then(() => resolve())
+//                 .catch((err) => reject(err));
+//             } else {
+//               resolve(); // No options to insert
+//             }
+//           }
+//         );
+//       });
+//     });
+
+//     // Execute all queries
+//     await Promise.all(queryPromises);
+//     res.status(200).json({ message: "Survey saved successfully!", survey_id }); // Return survey_id to the frontend
+//   } catch (error) {
+//     console.error("Database error:", error); // Log the error
+//     res.status(500).json({ error: "Internal server error", details: error.message });
+//   }
+// });
+
+// // Save permissions route
+// app.post('/save-permissions', verifyToken, (req, res) => {
+//   const {
+//     startDate,
+//     startTime,
+//     endDate,
+//     endTime,
+//     schedulingFrequency,
+//     daysOfWeek,
+//     randomTiming,
+//     timeDifference,
+//     sendReminders,
+//     assignedRoles,
+//     responseLimit,
+//     survey_id, // Pass survey_id from the frontend
+//   } = req.body;
+
+//   if (!survey_id) {
+//     return res.status(400).json({ success: false, message: "❌ Survey ID is required." });
+//   }
+
+//   const query = `
+//     INSERT INTO permissions (
+//       id,
+//       start_date,
+//       start_time,
+//       end_date,
+//       end_time,
+//       scheduling_frequency,
+//       days_of_week,
+//       random_timing,
+//       time_difference,
+//       send_reminders,
+//       assigned_roles,
+//       response_limit
+     
+//     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+//   `;
+
+//   db.query(
+//     query,
+//     [
+//       survey_id,
+//       startDate,
+//       startTime,
+//       endDate,
+//       endTime,
+//       JSON.stringify(schedulingFrequency),
+//       JSON.stringify(daysOfWeek),
+//       randomTiming,
+//       timeDifference,
+//       sendReminders,
+//       assignedRoles,
+//       responseLimit,
+     
+//     ],
+//     (err, result) => {
+//       if (err) {
+//         console.error('Error saving permissions:', err);
+//         res.status(500).send('Error saving permissions');
+//         return;
+//       }
+//       res.status(200).send('Permissions saved successfully');
+//     }
+//   );
+// });
+
+// // Start server
+// const PORT = 3000;
+// app.listen(PORT, () => {
+//   console.log(`Server running on port ${PORT}`);
+// });
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const config = require('./src/config/config.js').development;
 
 const app = express();
-app.use(express.json()); // To parse JSON requests
-app.use(cors()); // Allow cross-origin requests
+app.use(express.json());
+app.use(cors());
 
-// MySQL Connection
 const db = mysql.createConnection({
-  host: "localhost", // Change if hosted remotely
-  user: "root", // Your MySQL username
-  password: "dhurshi1234", // Your MySQL password
-  database: "survey_db", // Your database name
+  host: config.host,
+  user: config.user,
+  password: config.password,
+  database: config.database,
 });
 
 db.connect((err) => {
@@ -22,71 +310,246 @@ db.connect((err) => {
   console.log("Connected to MySQL database.");
 });
 
-// Route to save survey questions and options
-app.post("/save-survey", (req, res) => {
-  const surveyData = req.body; // Get survey data from the frontend
+const generateToken = (user) => {
+  return jwt.sign({ id: user.id, email: user.email, role: user.role_ }, "your_secret_key", { expiresIn: "1h" });
+};
 
-  if (!surveyData || !Array.isArray(surveyData)) {
+const verifyToken = (req, res, next) => {
+  const token = req.headers["authorization"];
+  if (!token) {
+    return res.status(403).json({ success: false, message: "No token provided." });
+  }
+
+  jwt.verify(token, "your_secret_key", (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ success: false, message: "Failed to authenticate token." });
+    }
+    req.user = decoded;
+    next();
+  });
+};
+
+app.post("/login", (req, res) => {
+  const { email, password_ } = req.body;
+
+  if (!email || !password_) {
+    return res.status(400).json({ success: false, message: "❌ Please provide email and password." });
+  }
+
+  db.query("SELECT * FROM users WHERE email = ?", [email], async (err, results) => {
+    if (err) {
+      console.error("❌ Database error:", err);
+      return res.status(500).json({ success: false, message: "⚠️ Server error. Please try again later." });
+    }
+
+    if (results.length === 0) {
+      return res.status(401).json({ success: false, message: "⚠️ Invalid credentials." });
+    }
+
+    const user = results[0];
+
+    const isPasswordValid = await bcrypt.compare(password_, user.password_);
+    if (!isPasswordValid) {
+      return res.status(401).json({ success: false, message: "⚠️ Invalid credentials." });
+    }
+
+    db.query("SELECT * FROM questions WHERE staff_email = ?", [email], (err, surveyResults) => {
+      if (err) {
+        console.error("❌ Database error:", err);
+        return res.status(500).json({ success: false, message: "⚠️ Server error. Please try again later." });
+      }
+
+      const hasCreatedSurvey = surveyResults.length > 0;
+
+      const token = generateToken(user);
+
+      res.status(200).json({
+        success: true,
+        message: "✅ Login successful!",
+        token,
+        hasCreatedSurvey,
+      });
+    });
+  });
+});
+
+app.post("/register", (req, res) => {
+  const { email, userID, role_, password_ } = req.body;
+
+  if (!email || !userID || !role_ || !password_) {
+    return res.status(400).json({ success: false, message: "❌ Please fill all fields." });
+  }
+
+  db.query("SELECT * FROM users WHERE email = ?", [email], async (err, results) => {
+    if (err) {
+      console.error("❌ Database error:", err);
+      return res.status(500).json({ success: false, message: "⚠️ Server error. Please try again later." });
+    }
+
+    if (results.length > 0) {
+      return res.status(400).json({ success: false, message: "⚠️ Email already registered." });
+    }
+
+    const hashedPassword = await bcrypt.hash(password_, 10);
+
+    db.query(
+      "INSERT INTO users (email, userID, role_, password_) VALUES (?, ?, ?, ?)",
+      [email, userID, role_, hashedPassword],
+      (err, results) => {
+        if (err) {
+          console.error("❌ Database error:", err);
+          return res.status(500).json({ success: false, message: "⚠️ Server error. Please try again later." });
+        }
+
+        res.status(201).json({ success: true, message: "✅ Registration successful!" });
+      }
+    );
+  });
+});
+
+app.post("/save-survey", verifyToken, async (req, res) => {
+  console.log("Request Body:", req.body);
+  const surveyData = req.body;
+  const staff_email = req.user.email;
+  const survey_id = req.body.survey_id;
+  const surveyTitle = req.body.surveyTitle;
+
+  if (!surveyData || !Array.isArray(surveyData.questions)) {
+    console.error("Invalid data format:", surveyData);
     return res.status(400).json({ error: "Invalid data format" });
   }
 
-  // Insert questions and options into the database
-  const queryPromises = surveyData.map((q) => {
-    return new Promise((resolve, reject) => {
-      // Insert question
-      db.query(
-        "INSERT INTO questions (question_text, shuffle_answers, shuffle_questions, skip_based_on_answer, multiple_choice, scale, score_question, add_other_option, require_answer,texts) VALUES (?, ?, ?, ?, ?, ?, ?, ?,?, ?)",
-        [
-          q.text, //completed
-          q.shuffle_answers || false,//completed
-          q.shuffle_questions || false,//completed
-          q.skip_based_on_answer || false, //completed
-          q.type === "multiple" ? true : false, // completed
-          q.type === "scale" ? true : false, // completed
-          q.score_question || false, //completed
-          q.add_other_option || false, // completed
-          q.require_answer || false,//completed
-          q.type === "text" ? true : false,
-        ],
-        (err, result) => {
-          if (err) return reject(err);
-          const questionId = result.insertId;
+  try {
+    const queryPromises = surveyData.questions.map((q) => {
+      return new Promise((resolve, reject) => {
+        db.query(
+          "INSERT INTO questions (question_text, shuffle_answers, shuffle_questions, skip_based_on_answer, multiple_choice, scale, score_question, add_other_option, require_answer, texts, survey_id, staff_email, survey_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [
+            q.text,
+            q.shuffle_answers || false,
+            q.shuffle_questions || false,
+            q.skip_based_on_answer || false,
+            q.type === "multiple" ? true : false,
+            q.type === "scale" ? true : false,
+            q.score_question || false,
+            q.add_other_option || false,
+            q.require_answer || false,
+            q.type === "text" ? true : false,
+            survey_id,
+            staff_email,
+            surveyTitle,
+          ],
+          (err, result) => {
+            if (err) {
+              console.error("Error inserting question:", err);
+              return reject(err);
+            }
+            const questionId = result.insertId;
 
-          // Insert options
-          if (q.options && Array.isArray(q.options)) {
-            const optionQueries = q.options.map((opt) => {
-              return new Promise((resOpt, rejOpt) => {
-                db.query(
-                  "INSERT INTO options (question_id, option_text) VALUES (?, ?)",
-                  [questionId, opt],
-                  (err) => {
-                    if (err) return rejOpt(err);
-                    resOpt();
-                  }
-                );
+            if (q.options && Array.isArray(q.options)) {
+              const optionQueries = q.options.map((opt) => {
+                return new Promise((resOpt, rejOpt) => {
+                  db.query(
+                    "INSERT INTO options (question_id, option_text) VALUES (?, ?)",
+                    [questionId, opt],
+                    (err) => {
+                      if (err) {
+                        console.error("Error inserting option:", err);
+                        return rejOpt(err);
+                      }
+                      resOpt();
+                    }
+                  );
+                });
               });
-            });
 
-            // Wait for all options to be inserted
-            Promise.all(optionQueries)
-              .then(() => resolve())
-              .catch((err) => reject(err));
-          } else {
-            resolve(); // No options to insert
+              Promise.all(optionQueries)
+                .then(() => resolve())
+                .catch((err) => reject(err));
+            } else {
+              resolve();
+            }
           }
-        }
-      );
+        );
+      });
     });
-  });
 
-  // Execute all queries
-  Promise.all(queryPromises)
-    .then(() => res.status(200).json({ message: "Survey saved successfully!" }))
-    .catch((err) => res.status(500).json({ error: "Database error", details: err }));
+    await Promise.all(queryPromises);
+    res.status(200).json({ message: "Survey saved successfully!", survey_id });
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Internal server error", details: error.message });
+  }
 });
 
-// Start server
-const PORT = 5000;
+app.post('/save-permissions', verifyToken, (req, res) => {
+  const {
+    startDate,
+    startTime,
+    endDate,
+    endTime,
+    schedulingFrequency,
+    daysOfWeek,
+    randomTiming,
+    timeDifference,
+    sendReminders,
+    assignedRoles,
+    responseLimit,
+    survey_id,
+    surveyTitle, // Added surveyTitle
+  } = req.body;
+
+  if (!survey_id) {
+    return res.status(400).json({ success: false, message: "❌ Survey ID is required." });
+  }
+
+  const query = `
+    INSERT INTO permissions (
+      id,
+      start_date, 
+      start_time, 
+      end_date, 
+      end_time, 
+      scheduling_frequency, 
+      days_of_week, 
+      random_timing, 
+      time_difference, 
+      send_reminders, 
+      assigned_roles, 
+      response_limit,
+      survey_title
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  db.query(
+    query,
+    [
+      survey_id,
+      startDate,
+      startTime,
+      endDate,
+      endTime,
+      JSON.stringify(schedulingFrequency),
+      JSON.stringify(daysOfWeek),
+      randomTiming,
+      timeDifference,
+      sendReminders,
+      assignedRoles,
+      responseLimit,
+      surveyTitle, // Added surveyTitle
+    ],
+    (err, result) => {
+      if (err) {
+        console.error('Error saving permissions:', err);
+        res.status(500).send('Error saving permissions');
+        return;
+      }
+      res.status(200).send('Permissions saved successfully');
+    }
+  );
+});
+
+const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-}); 
+});
