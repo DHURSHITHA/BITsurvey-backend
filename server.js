@@ -44,25 +44,30 @@ const verifyToken = (req, res, next) => {
 };
 
 app.post("/login", (req, res) => {
-  const { email, password_ } = req.body;
+  const { email, password_, role } = req.body;
+  console.log("Request body:", req.body);
 
-  if (!email || !password_) {
-    return res.status(400).json({ success: false, message: "❌ Please provide email and password." });
+  if (!email || !password_ || !role) {
+    return res.status(400).json({ success: false, message: "❌ Please provide email, password, and role." });
   }
 
-  db.query("SELECT * FROM users WHERE email = ?", [email], async (err, results) => {
+  db.query("SELECT * FROM users WHERE email = ? AND role_ = ?", [email, role], async (err, results) => {
     if (err) {
       console.error("❌ Database error:", err);
       return res.status(500).json({ success: false, message: "⚠️ Server error. Please try again later." });
     }
 
+    console.log("Database query results:", results);
+
     if (results.length === 0) {
-      return res.status(401).json({ success: false, message: "⚠️ Invalid credentials." });
+      return res.status(401).json({ success: false, message: "⚠️ Invalid credentials or role mismatch." });
     }
 
     const user = results[0];
 
     const isPasswordValid = await bcrypt.compare(password_, user.password_);
+    console.log("Password comparison result:", isPasswordValid);
+
     if (!isPasswordValid) {
       return res.status(401).json({ success: false, message: "⚠️ Invalid credentials." });
     }
@@ -76,6 +81,7 @@ app.post("/login", (req, res) => {
       const hasCreatedSurvey = surveyResults.length > 0;
 
       const token = generateToken(user);
+      console.log("Generated token:", token);
 
       res.status(200).json({
         success: true,
@@ -86,7 +92,6 @@ app.post("/login", (req, res) => {
     });
   });
 });
-
 app.post("/register", (req, res) => {
   const { email, userID, role_, password_ } = req.body;
 
@@ -212,6 +217,7 @@ app.post('/save-permissions', verifyToken, (req, res) => {
     survey_id,
     surveyTitle, // Added surveyTitle
   } = req.body;
+  const staff_email=req.user.email
 
   if (!survey_id) {
     return res.status(400).json({ success: false, message: "❌ Survey ID is required." });
@@ -231,8 +237,9 @@ app.post('/save-permissions', verifyToken, (req, res) => {
       send_reminders, 
       assigned_roles, 
       response_limit,
-      survey_title
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      survey_title,
+      staff_email
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?)
   `;
 
   db.query(
@@ -250,7 +257,8 @@ app.post('/save-permissions', verifyToken, (req, res) => {
       sendReminders,
       assignedRoles,
       responseLimit,
-      surveyTitle, // Added surveyTitle
+      surveyTitle,
+      staff_email // Added surveyTitle
     ],
     (err, result) => {
       if (err) {
@@ -262,7 +270,214 @@ app.post('/save-permissions', verifyToken, (req, res) => {
     }
   );
 });
+const { v4: uuidv4 } = require('uuid');
 
+app.post('/feedback', (req, res) => {
+  const feedbacks = req.body; // Array of feedback objects from frontend
+  const fbid = uuidv4(); // Generate a unique feedback batch ID
+
+  const query = `
+    INSERT INTO feedbacks (
+      student, facultyCourse, periodical, clarity, topicDiscussions,
+      timeManagement, syllabusCoverage, satisfaction, comments, fbid
+    ) VALUES (?,?,?,?,?,?,?,?,?,?)
+  `;
+
+  let successCount = 0;
+  let errorCount = 0;
+
+  // Loop through each feedback and insert it individually
+  feedbacks.forEach((feedback, index) => {
+    const values = [
+      feedback.student,
+      feedback.facultyCourse,
+      feedback.periodical,
+      feedback.clarity,
+      feedback.topicDiscussions,
+      feedback.timeManagement,
+      feedback.syllabusCoverage,
+      feedback.satisfaction,
+      feedback.comments,
+      fbid, // Include the feedback batch ID
+    ];
+
+    db.query(query, values, (err, results) => {
+      if (err) {
+        console.error(`Error inserting feedback at index ${index}:`, err);
+        errorCount++;
+      } else {
+        successCount++;
+      }
+
+      // Check if all feedbacks have been processed
+      if (index === feedbacks.length - 1) {
+        if (errorCount > 0) {
+          res.status(500).json({
+            message: `Failed to submit ${errorCount} feedback(s).`,
+            successCount: successCount,
+            errorCount: errorCount,
+            fbid: fbid, // Return the feedback batch ID
+          });
+        } else {
+          res.status(201).json({
+            message: 'All feedbacks submitted successfully!',
+            successCount: successCount,
+            fbid: fbid, // Return the feedback batch ID
+          });
+        }
+      }
+    });
+  });
+});
+app.post('/submit-feedback', (req, res) => {
+  const { name, rollno, facultyname, videosUseful, materialsUseful, clearPSLevels, feedback } = req.body;
+
+  const sql = `INSERT INTO skillfb (Name, RollNo, Faculty, Isvideo_Useful, Materialsuseful, clearPslevels, Feedback) 
+               VALUES (?, ?, ?, ?, ?, ?, ?)`;
+  const values = [name, rollno, facultyname, videosUseful, materialsUseful, clearPSLevels, feedback];
+
+  db.query(sql, values, (err, result) => {
+    if (err) {
+      console.error('Error inserting data:', err);
+      res.status(500).send('Error submitting feedback');
+      return;
+    }
+    res.status(200).send('Feedback submitted successfully');
+  });
+});
+
+
+
+// Get a student by Rollno
+app.get("/student/:email", (req, res) => {
+  const { email } = req.params;
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+
+  const sql = "SELECT * FROM studentdetails WHERE Email = ?";
+  db.query(sql, [email], (err, result) => {
+    if (err) {
+      console.error("Error fetching student:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
+    res.json(result.length > 0 ? result[0] : null);
+  });
+});
+
+// Add a new student
+app.post("/student", (req, res) => {
+  const student = req.body;
+  if (!student.Email || !student.Rollno) {
+    return res.status(400).send({ message: "Email and Rollno are required" });
+  }
+
+  const sql = "INSERT INTO studentdetails SET ?";
+  db.query(sql, student, (err, result) => {
+    if (err) {
+      console.error("Error saving student details:", err);
+      return res.status(500).send({ message: "Error saving student details", error: err });
+    }
+    res.send({ message: "Student added successfully", id: result.insertId });
+  });
+});
+
+// Update student details
+app.put("/student/:rollno", (req, res) => {
+  const { rollno } = req.params;
+  const student = req.body;
+  if (!rollno) {
+    return res.status(400).send({ message: "Rollno is required" });
+  }
+
+  const sql = "UPDATE studentdetails SET ? WHERE Rollno = ?";
+  db.query(sql, [student, rollno], (err, result) => {
+    if (err) {
+      console.error("Error updating student details:", err);
+      return res.status(500).send({ message: "Error updating student details", error: err });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).send({ message: "Student not found" });
+    }
+    res.send({ message: "Student updated successfully" });
+  });
+});
+
+
+app.post('/students', (req, res) => {
+  const { selectedLevels, selectedRole, startRange, endRange } = req.body;
+
+  console.log("Received request body:", req.body); // Log the request body
+
+  let query = 'SELECT Name,Year,Email,Department FROM studentdetails WHERE 1=1';
+  let queryParams = [];
+
+  // Add condition for selectedRole
+  if (selectedRole) {
+    query += ' AND Mentor = ?';
+    queryParams.push(selectedRole);
+  }
+
+  // Add condition for RP range
+  if (startRange && endRange) {
+    query += ' AND Rp BETWEEN ? AND ?';
+    queryParams.push(startRange, endRange);
+  }
+
+  // Add conditions for selectedLevels
+  if (selectedLevels && selectedLevels.length > 0) {
+    selectedLevels.forEach(level => {
+      const lastSpaceIndex = level.lastIndexOf(' ');
+      const skill = level.substring(0, lastSpaceIndex).trim();
+      const levelNumber = level.substring(lastSpaceIndex + 1).trim();
+
+      let column;
+      switch (skill.toUpperCase()) {
+        case 'C PROGRAMMING':
+          column = 'C_levels';
+          break;
+        case 'PYTHON':
+          column = 'Python_Levels';
+          break;
+        case 'JAVA':
+          column = 'Java_levels';
+          break;
+        case 'SQL':
+          column = 'DBMS_levels';
+          break;
+        case 'PROBLEM SOLVING':
+          column = 'ProblemSolving';
+          break;
+        case 'UIUX':
+          column = 'UIUX';
+          break;
+        case 'APTITUDE':
+          column = 'Aptitude';
+          break;
+        default:
+          console.error(`Unknown skill: ${skill}`);
+          return;
+      }
+
+      // Add condition for each skill-level pair
+      query += ` AND ${column} = ?`;
+      queryParams.push(levelNumber.replace('Level', ''));
+    });
+  }
+
+  console.log("Generated SQL Query:", query); // Log the final SQL query
+  console.log("Query Parameters:", queryParams); // Log the query parameters
+
+  // Execute the query
+  db.query(query, queryParams, (error, results) => {
+    if (error) {
+      console.error('Database error:', error); // Log the database error
+      return res.status(500).json({ error: 'Database error', details: error.message });
+    }
+    console.log("Query Results:", results); // Log the query results
+    res.json(results);
+  });
+});
 const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
