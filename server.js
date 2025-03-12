@@ -346,6 +346,62 @@ app.post('/submit-feedback', (req, res) => {
   });
 });
 
+// Add this endpoint in your backend code
+app.get("/get-surveys", verifyToken, (req, res) => {
+  const staff_email = req.user.email; // Get the logged-in faculty's email from the token
+
+  const query = `
+    SELECT DISTINCT start_date, survey_title, staff_email,end_date
+    FROM permissions 
+    WHERE 
+      staff_email = ? 
+      AND start_date <= CURDATE() 
+      AND end_date >= CURDATE() 
+  `;
+
+  db.query(query, [staff_email], (err, results) => {
+    if (err) {
+      console.error("Error fetching surveys:", err);
+      return res.status(500).json({ error: "Database error", details: err.message });
+    }
+    res.json(results); // Return the list of surveys
+  });
+});
+
+app.get("/get-completed-surveys", verifyToken, (req, res) => {
+  const staff_email = req.user.email;
+
+  const query = `
+    SELECT DISTINCT start_date, survey_title, staff_email, end_date
+    FROM permissions 
+    WHERE staff_email = ? AND end_date < CURDATE()
+  `;
+
+  db.query(query, [staff_email], (err, results) => {
+    if (err) {
+      console.error("Error fetching completed surveys:", err);
+      return res.status(500).json({ error: "Database error", details: err.message });
+    }
+    res.json(results);
+  });
+});
+app.get("/get-scheduled-surveys", verifyToken, (req, res) => {
+  const staff_email = req.user.email;
+
+  const query = `
+    SELECT DISTINCT start_date, survey_title, staff_email, end_date
+    FROM permissions 
+    WHERE staff_email = ? AND start_date > CURDATE()
+  `;
+
+  db.query(query, [staff_email], (err, results) => {
+    if (err) {
+      console.error("Error fetching completed surveys:", err);
+      return res.status(500).json({ error: "Database error", details: err.message });
+    }
+    res.json(results);
+  });
+});
 
 
 // Get a student by Rollno
