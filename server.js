@@ -685,7 +685,7 @@ const fetchSurveys = (studentEmail, Year, Department, GroupID, res) => {
   console.log("Fetching surveys for:", { Year, Department, GroupID });
 
   const surveyQuery = `
-    SELECT DISTINCT start_date, survey_title, staff_email, end_date, start_time, end_time
+    SELECT DISTINCT start_date, survey_title, staff_email, end_date, start_time, end_time, response_limit
     FROM permissions
     WHERE
       (assigned_roles = ? OR assigned_roles = ?)
@@ -709,6 +709,46 @@ const fetchSurveys = (studentEmail, Year, Department, GroupID, res) => {
 
     console.log("Surveys found:", surveyResults);
 
+    // Function to format date to YYYY-MM-DD
+    const formatDate = (dateString) => {
+      const date = new Date(dateString);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+
+    // Combine start_date with start_time and end_date with end_time
+    const formattedSurveys = surveyResults.map((survey) => {
+      // Format start_date and end_date to YYYY-MM-DD
+      const formattedStartDate = formatDate(survey.start_date);
+      const formattedEndDate = formatDate(survey.end_date);
+
+      // Ensure start_time and end_time are in HH:MM:SS format
+      const startTime = survey.start_time ? survey.start_time : "00:00:00";
+      const endTime = survey.end_time ? survey.end_time : "23:59:59";
+
+      // Combine date and time into a valid ISO string
+      const startDateTime = `${formattedStartDate}T${startTime}`;
+      const endDateTime = `${formattedEndDate}T${endTime}`;
+
+      // Validate the date strings
+      const isValidStartDate = !isNaN(new Date(startDateTime).getTime());
+      const isValidEndDate = !isNaN(new Date(endDateTime).getTime());
+
+      if (!isValidStartDate || !isValidEndDate) {
+        console.error("Invalid date format:", { startDateTime, endDateTime });
+        return null; // Skip invalid entries
+      }
+
+      return {
+        ...survey,
+        start_date: new Date(startDateTime).toISOString(),
+        end_date: new Date(endDateTime).toISOString(),
+        response_limit: survey.response_limit || 1 // Ensure response_limit is at least 1
+      };
+    }).filter(survey => survey !== null); // Remove invalid entries
+
     // Fetch group name only if GroupID exists
     if (GroupID) {
       const groupQuery = `SELECT GroupName FROM student_groups_info WHERE GroupID = ?`;
@@ -721,7 +761,7 @@ const fetchSurveys = (studentEmail, Year, Department, GroupID, res) => {
         const GroupName = groupResults.length > 0 ? groupResults[0].GroupName : "No Group";
         console.log("Group Name:", GroupName);
 
-        const surveysWithGroup = surveyResults.map((survey) => ({
+        const surveysWithGroup = formattedSurveys.map((survey) => ({
           ...survey,
           GroupName,
         }));
@@ -729,7 +769,7 @@ const fetchSurveys = (studentEmail, Year, Department, GroupID, res) => {
         res.json(surveysWithGroup);
       });
     } else {
-      res.json(surveyResults);
+      res.json(formattedSurveys);
     }
   });
 };
@@ -898,7 +938,367 @@ app.post("/creategroup", (req, res) => {
     }
   );
 });
+app.get("/surveysuser", verifyToken, (req, res) => {
+  const studentEmail = req.user.email;
+  console.log("Fetching surveys for student:", studentEmail);
 
+  // Query to get student details from student_groups
+  const studentQuery = `SELECT Year, Department, GroupID FROM student_groups WHERE Email = ?`;
+
+  db.query(studentQuery, [studentEmail], (err, studentResults) => {
+    if (err) {
+      console.error("Error fetching student details:", err);
+      return res.status(500).json({ error: "Database error", details: err.message });
+    }
+
+    if (studentResults.length === 0) {
+      console.log("Student not found in student_groups. Checking studentdetails...");
+      // If student is not found in student_groups, fetch from studentdetails
+      const studentDetailsQuery = `SELECT Year, Department FROM studentdetails WHERE Email = ?`;
+
+      db.query(studentDetailsQuery, [studentEmail], (err, studentDetailsResults) => {
+        if (err) {
+          console.error("Error fetching student details:", err);
+          return res.status(500).json({ error: "Database error", details: err.message });
+        }
+
+        if (studentDetailsResults.length === 0) {
+          return res.status(404).json({ error: "Student not found in database" });
+        }
+
+        const { Year, Department } = studentDetailsResults[0];
+        fetchSurveys(studentEmail, Year, Department, null, res);
+      });
+    } else {
+      const { Year, Department, GroupID } = studentResults[0];
+      fetchSurveys(studentEmail, Year, Department, GroupID, res);
+    }
+  });
+});
+
+
+
+//   const { title } = req.params;
+
+//   // Fetch questions based on survey title
+//   db.query('SELECT * FROM questions WHERE survey_name = ?', [title], (err, questions) => {
+//     if (err) {
+//       console.error('Error fetching questions:', err);
+//       return res.status(500).send('Internal Server Error');
+//     }
+
+//     // If no questions are found, return an empty array
+//     if (questions.length === 0) {
+//       return res.json([]);
+//     }
+
+//     // Fetch options for each question
+//     const questionsWithOptions = [];
+//     let completedQueries = 0;
+
+//     questions.forEach((question, index) => {
+//       db.query('SELECT * FROM options WHERE question_id = ?', [question.id], (err, options) => {
+//         if (err) {
+//           console.error('Error fetching options:', err);
+//           return res.status(500).send('Internal Server Error');
+//         }
+
+//         // Add the question with its options to the array
+//         questionsWithOptions.push({ ...question, options });
+
+//         // Check if all queries are completed
+//         completedQueries++;
+//         if (completedQueries === questions.length) {
+//           // Send the response with all questions and their options
+//           res.json(questionsWithOptions);
+//         }
+//       });
+//     });
+//   });
+// });
+
+app.get('/surveyquestions/:title', (req, res) => {
+  const { title } = req.params;
+
+  db.query('SELECT * FROM questions WHERE survey_name = ?', [title], (err, questions) => {
+    if (err) {
+      console.error('Error fetching questions:', err);
+      return res.status(500).send('Internal Server Error');
+    }
+
+    if (questions.length === 0) {
+      return res.json([]);
+    }
+
+    const questionsWithOptions = [];
+    let completedQueries = 0;
+
+    questions.forEach((question, index) => {
+      db.query('SELECT * FROM options WHERE question_id = ?', [question.id], (err, options) => {
+        if (err) {
+          console.error('Error fetching options:', err);
+          return res.status(500).send('Internal Server Error');
+        }
+
+        // Shuffle options if shuffle_options is 1
+        if (question.shuffle_answers === 1) {
+          options = options.sort(() => Math.random() - 0.5);
+        }
+
+        console.log(`Question ${index + 1}:`, question);
+        console.log(`Options before sending response:`, options);
+
+        questionsWithOptions.push({ ...question, options });
+
+        completedQueries++;
+        if (completedQueries === questions.length) {
+          console.log("Final response before sending:", questionsWithOptions);
+          res.json(questionsWithOptions);
+        }
+      });
+    });
+  });
+});
+// Create a new survey
+app.post('/create-survey', verifyToken, (req, res) => {
+  const { survey_title, user_email } = req.body;
+  const survey_id = require('uuid').v4();
+
+  db.query(
+    'INSERT INTO surveys (id, user_email, survey_title) VALUES (?, ?, ?)',
+    [survey_id, user_email, survey_title],
+    (err) => {
+      if (err) {
+        console.error('Error creating survey:', err);
+        return res.status(500).json({ success: false, message: 'Failed to create survey' });
+      }
+      res.json({ success: true, survey_id });
+    }
+  );
+});
+
+// Add this to your backend code
+app.post('/track-submission', verifyToken, (req, res) => {
+  const { survey_title, student_email } = req.body;
+
+  // Check if submission exists
+  const checkQuery = `SELECT * FROM survey_submissions WHERE survey_title = ? AND student_email = ?`;
+  db.query(checkQuery, [survey_title, student_email], (err, results) => {
+    if (err) {
+      console.error("Error checking submission:", err);
+      return res.status(500).json({ error: "Database error", details: err.message });
+    }
+
+    if (results.length > 0) {
+      // Update existing submission count
+      const updateQuery = `UPDATE survey_submissions SET submission_count = submission_count + 1 WHERE survey_title = ? AND student_email = ?`;
+      db.query(updateQuery, [survey_title, student_email], (err) => {
+        if (err) {
+          console.error("Error updating submission:", err);
+          return res.status(500).json({ error: "Database error", details: err.message });
+        }
+        res.json({ success: true });
+      });
+    } else {
+      // Create new submission record
+      const insertQuery = `INSERT INTO survey_submissions (survey_title, student_email, submission_count) VALUES (?, ?, 1)`;
+      db.query(insertQuery, [survey_title, student_email], (err) => {
+        if (err) {
+          console.error("Error creating submission:", err);
+          return res.status(500).json({ error: "Database error", details: err.message });
+        }
+        res.json({ success: true });
+      });
+    }
+  });
+});
+
+// Add this to get submission count
+app.get('/submission-count', verifyToken, (req, res) => {
+  const { survey_title, student_email } = req.query;
+
+  const query = `SELECT submission_count FROM survey_submissions WHERE survey_title = ? AND student_email = ?`;
+  db.query(query, [survey_title, student_email], (err, results) => {
+    if (err) {
+      console.error("Error fetching submission count:", err);
+      return res.status(500).json({ error: "Database error", details: err.message });
+    }
+
+    const count = results.length > 0 ? results[0].submission_count : 0;
+    res.json({ count });
+  });
+});
+
+// Modify the save-response endpoint to handle updates
+app.post('/save-response', verifyToken, (req, res) => {
+  const { survey_id, question_text, response_text, selected_option, student_email, survey_title } = req.body;
+
+  // First check if response exists
+  const checkQuery = `SELECT * FROM survey_responses 
+    WHERE survey_id = ? AND question_text = ? AND student_email = ? AND survey_title = ?`;
+  
+  db.query(checkQuery, [survey_id, question_text, student_email, survey_title], (err, results) => {
+    if (err) {
+      console.error("Error checking response:", err);
+      return res.status(500).json({ error: "Database error", details: err.message });
+    }
+
+    if (results.length > 0) {
+      // Update existing response
+      const updateQuery = `UPDATE survey_responses 
+        SET response_text = ?, selected_option = ?, updated_at = NOW() 
+        WHERE survey_id = ? AND question_text = ? AND student_email = ? AND survey_title = ?`;
+      
+      db.query(updateQuery, [
+        response_text, 
+        selected_option, 
+        survey_id, 
+        question_text, 
+        student_email,
+        survey_title
+      ], (err) => {
+        if (err) {
+          console.error("Error updating response:", err);
+          return res.status(500).json({ error: "Database error", details: err.message });
+        }
+        res.json({ success: true });
+      });
+    } else {
+      // Insert new response
+      const insertQuery = `INSERT INTO survey_responses 
+        (survey_id, question_text, response_text, selected_option, student_email, survey_title) 
+        VALUES (?, ?, ?, ?, ?, ?)`;
+      
+      db.query(insertQuery, [
+        survey_id, 
+        question_text, 
+        response_text, 
+        selected_option, 
+        student_email,
+        survey_title
+      ], (err) => {
+        if (err) {
+          console.error("Error saving response:", err);
+          return res.status(500).json({ error: "Database error", details: err.message });
+        }
+        res.json({ success: true });
+      });
+    }
+  });
+});
+app.get('/get-mentee-surveys', verifyToken, async (req, res) => {
+  try {
+    const staffEmail = req.user.email;
+    console.log(`[DEBUG] Fetching surveys for mentor: ${staffEmail}`);
+
+    // 1. Get all mentees of this mentor
+    const [mentees] = await db.promise().query(
+      'SELECT mentee_email FROM mentor_mentee WHERE mentor_email = ?',
+      [staffEmail]
+    );
+
+    if (!mentees || mentees.length === 0) {
+      console.log('[DEBUG] No mentees found for this mentor');
+      return res.status(200).json([]);
+    }
+
+    const menteeEmails = mentees.map(m => m.mentee_email);
+    console.log(`[DEBUG] Mentee emails: ${menteeEmails.join(', ')}`);
+
+    // 2. Get mentees' year, department, and group info
+    const [menteeDetails] = await db.promise().query(`
+      SELECT s.Email, s.Year, s.Department, sg.GroupID, sgi.GroupName 
+      FROM studentdetails s
+      LEFT JOIN student_groups sg ON s.Email = sg.Email
+      LEFT JOIN student_groups_info sgi ON sg.GroupID = sgi.GroupID
+      WHERE s.Email IN (?)
+    `, [menteeEmails]);
+
+    if (!menteeDetails || menteeDetails.length === 0) {
+      console.log('[DEBUG] No mentee details found');
+      return res.status(200).json([]);
+    }
+
+    // Current date/time for live survey filtering
+    const currentDate = new Date().toISOString().split('T')[0];
+    const currentTime = new Date().toLocaleTimeString('en-GB', { hour12: false });
+    console.log(`[DEBUG] Current date: ${currentDate}, time: ${currentTime}`);
+
+    // 3. Get all surveys that are currently live
+    const [allLiveSurveys] = await db.promise().query(`
+      SELECT * FROM permissions 
+      WHERE start_date <= ?
+      AND end_date >= ?
+      AND (
+        (start_date = end_date AND start_time <= ? AND end_time >= ?) 
+        OR 
+        (start_date != end_date)
+      )
+    `, [currentDate, currentDate, currentTime, currentTime]);
+
+    console.log(`[DEBUG] Found ${allLiveSurveys.length} live surveys in system`);
+
+    // 4. Filter surveys that match mentees' criteria
+    const relevantSurveys = allLiveSurveys.filter(survey => {
+      // Improved helper function to handle different input formats
+      const safeParse = (input) => {
+        if (!input || input === '[]') return [];
+        
+        // If it's already an array (some DB drivers might return parsed JSON)
+        if (Array.isArray(input)) return input;
+        
+        // If it's a string that looks like a simple value (e.g., "Year:II")
+        if (typeof input === 'string' && !input.startsWith('[') && !input.startsWith('{')) {
+          return [input]; // Return as single-item array
+        }
+        
+        // Try to parse as JSON
+        try {
+          return JSON.parse(input);
+        } catch (e) {
+          console.error(`Could not parse as JSON: ${input}. Treating as empty array.`);
+          return [];
+        }
+      };
+
+      // Get survey criteria
+      const surveyYears = safeParse(survey.years);
+      const surveyDepts = safeParse(survey.department);
+      const surveyGroups = safeParse(survey.assigned_roles);
+
+      // Check if survey has no restrictions (applies to all)
+      if (surveyYears.length === 0 && surveyDepts.length === 0 && surveyGroups.length === 0) {
+        return true;
+      }
+
+      // Check if any mentee matches survey criteria
+      return menteeDetails.some(mentee => {
+        // Check year/department criteria
+        const yearMatch = surveyYears.length === 0 || surveyYears.some(y => 
+          mentee.Year && mentee.Year.toString().includes(y.toString())
+        );
+        const deptMatch = surveyDepts.length === 0 || surveyDepts.some(d => 
+          mentee.Department && mentee.Department.toString().includes(d.toString())
+        );
+        
+        // Check group criteria
+        const groupMatch = surveyGroups.length === 0 || 
+                         (mentee.GroupName && surveyGroups.some(g => 
+                           mentee.GroupName.toString().includes(g.toString())
+                         ));
+        
+        return (yearMatch && deptMatch) || groupMatch;
+      });
+    });
+
+    console.log(`[DEBUG] Found ${relevantSurveys.length} relevant surveys for mentees`);
+    res.status(200).json(relevantSurveys);
+
+  } catch (error) {
+    console.error('[ERROR] in mentee surveys endpoint:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
