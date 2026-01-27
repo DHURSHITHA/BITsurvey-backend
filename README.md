@@ -1,11 +1,11 @@
-📊 BIT Survey – Backend API
-🚀 Project Overview
+BIT Survey – Backend API
+Project Overview
 
 BIT Survey Backend is a RESTful API built to power a Survey Management System for educational institutions. It handles secure authentication, role-based access control, survey creation, response management, and analytics using a scalable backend architecture.
 
 The API is designed to support multiple user roles such as faculty, mentors, and students, ensuring secure and structured data flow between the frontend and database.
 
-🛠️ Tech Stack
+Tech Stack
 
 Node.js
 
@@ -21,19 +21,19 @@ UUID
 
 CORS
 
-🎯 Core Features
+Core Features
 
-🔐 Authentication & Authorization
+Authentication & Authorization
 
 JWT-based login and protected routes
 
 Password hashing using Bcrypt
 
-👤 Role-Based Access Control
+Role-Based Access Control
 
 Separate API permissions for faculty, mentors, and students
 
-📝 Survey Management APIs
+Survey Management APIs
 
 Create, update, schedule, and delete surveys
 
@@ -41,17 +41,17 @@ Support for MCQ and text-based questions
 
 Survey template handling
 
-👥 Targeted Surveys
+Targeted Surveys
 
 Group-based survey distribution
 
-📊 Response Handling & Analytics
+Response Handling & Analytics
 
 Store and validate survey responses
 
 Track participation and completion status
 
-🗄️ Database Management
+Database Management
 
 MySQL-backed relational data storage
 
